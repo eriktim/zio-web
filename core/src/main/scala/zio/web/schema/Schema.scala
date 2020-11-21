@@ -2,6 +2,8 @@ package zio.web.schema
 
 import zio.Chunk
 
+import scala.collection.SortedMap
+
 sealed trait Schema[A] { self =>
   def ? : Schema[Option[A]] = Schema.Optional(self)
 
@@ -15,9 +17,9 @@ sealed trait Schema[A] { self =>
 }
 
 object Schema {
-  sealed case class Record(structure: Map[String, Schema[_]])      extends Schema[Map[String, _]]
-  sealed case class Sequence[A](element: Schema[A])                extends Schema[Chunk[A]]
-  sealed case class Enumeration(structure: Map[String, Schema[_]]) extends Schema[Map[String, _]]
+  sealed case class Record(structure: SortedMap[String, Schema[_]])      extends Schema[SortedMap[String, _]]
+  sealed case class Sequence[A](element: Schema[A])                      extends Schema[Chunk[A]]
+  sealed case class Enumeration(structure: SortedMap[String, Schema[_]]) extends Schema[SortedMap[String, _]]
   sealed case class Transform[A, B](codec: Schema[A], f: A => Either[String, B], g: B => Either[String, A])
       extends Schema[B]
   sealed case class Primitive[A](standardType: StandardType[A])    extends Schema[A]
@@ -28,7 +30,7 @@ object Schema {
 
   def caseClassN[A, Z](t1: (String, Schema[A]))(f: A => Z, g: Z => Option[A]): Schema[Z] =
     Schema
-      .record(Map(t1))
+      .record(SortedMap(t1))
       .transformOrFail(
         { map =>
           val v1 = map(t1._1).asInstanceOf[A]
@@ -36,7 +38,7 @@ object Schema {
           Right(f(v1))
         }, { (z: Z) =>
           g(z).map { a =>
-            Map(t1._1 -> a)
+            SortedMap(t1._1 -> a)
           }.toRight("Cannot deconstruct case class")
         }
       )
@@ -46,7 +48,7 @@ object Schema {
     t2: (String, Schema[B])
   )(f: (A, B) => Z, g: Z => Option[(A, B)]): Schema[Z] =
     Schema
-      .record(Map[String, Schema[_]](t1, t2))
+      .record(SortedMap[String, Schema[_]](t1, t2))
       .transformOrFail(
         { map =>
           val v1 = map(t1._1).asInstanceOf[A]
@@ -54,7 +56,7 @@ object Schema {
 
           Right(f(v1, v2))
         }, { (z: Z) =>
-          g(z).map { case (a, b) => Map(t1._1 -> a, t2._1 -> b) }
+          g(z).map { case (a, b) => SortedMap(t1._1 -> a, t2._1 -> b) }
             .toRight("Cannot deconstruct case class")
         }
       )
@@ -65,7 +67,7 @@ object Schema {
     t3: (String, Schema[C])
   )(f: (A, B, C) => Z, g: Z => Option[(A, B, C)]): Schema[Z] =
     Schema
-      .record(Map[String, Schema[_]](t1, t2, t3))
+      .record(SortedMap[String, Schema[_]](t1, t2, t3))
       .transformOrFail(
         { map =>
           val v1 = map(t1._1).asInstanceOf[A]
@@ -74,13 +76,13 @@ object Schema {
 
           Right(f(v1, v2, v3))
         }, { (z: Z) =>
-          g(z).map { case (a, b, c) => Map(t1._1 -> a, t2._1 -> b, t3._1 -> c) }
+          g(z).map { case (a, b, c) => SortedMap(t1._1 -> a, t2._1 -> b, t3._1 -> c) }
             .toRight("Cannot deconstruct case class")
         }
       )
 
   def either[A, B](left: Schema[A], right: Schema[B]): Schema[Either[A, B]] =
-    enumeration(Map("Left" -> left, "Right" -> right)).transformOrFail(
+    enumeration(SortedMap("Left" -> left, "Right" -> right)).transformOrFail(
       { map =>
         map.headOption.map {
           case ("Left", v)  => Right(Left(v.asInstanceOf[A]))
@@ -88,12 +90,12 @@ object Schema {
           case _            => Left("Expected left or right of sum")
         }.getOrElse(Left("Expected left or right of sum"))
       }, {
-        case Left(v)  => Right(Map("Left"  -> v))
-        case Right(v) => Right(Map("Right" -> v))
+        case Left(v)  => Right(SortedMap("Left"  -> v))
+        case Right(v) => Right(SortedMap("Right" -> v))
       }
     )
 
-  def enumeration(structure: Map[String, Schema[_]]): Schema[Map[String, _]] =
+  def enumeration(structure: SortedMap[String, Schema[_]]): Schema[SortedMap[String, _]] =
     Enumeration(structure)
 
   def first[A](codec: Schema[(A, Unit)]): Schema[A] =
@@ -108,7 +110,7 @@ object Schema {
   implicit def primitive[A](implicit standardType: StandardType[A]): Schema[A] =
     Primitive(standardType)
 
-  def record(structure: Map[String, Schema[_]]): Schema[Map[String, _]] =
+  def record(structure: SortedMap[String, Schema[_]]): Schema[SortedMap[String, _]] =
     Record(structure)
 
   implicit def sequence[A](implicit element: Schema[A]): Schema[Chunk[A]] =

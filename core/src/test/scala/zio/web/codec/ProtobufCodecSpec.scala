@@ -10,24 +10,29 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
 
   def spec = suite("ProtobufCodec Spec")(
     suite("Toplevel ProtobufCodec Spec")(
-      testM("Should encode Protobuf Test1 correctly") {
-        assertM(encode(schemaTest1, Test1(150)).map(asHex))(
-          equalTo("0x03089601")
+      testM("Should correctly encode integers") {
+        assertM(encode(schemaBasicInt, BasicInt(150)).map(asHex))(
+          equalTo("0x089601")
         )
       },
-      testM("Should encode Protobuf Test2 correctly") {
-        assertM(encode(schemaTest2, Test2("testing")).map(asHex))(
-          equalTo("0x090A0774657374696E67")
+      testM("Should correctly encode strings") {
+        assertM(encode(schemaBasicString, BasicString("testing")).map(asHex))(
+          equalTo("0x0A0774657374696E67")
         )
       },
-      testM("Should encode Protobuf Test3 correctly") {
-        assertM(encode(schemaTest3, Test3(Test1(150))).map(asHex))(
-          equalTo("0x050A03089601")
+      testM("Should correctly encode embedded messages") {
+        assertM(encode(schemaEmbedded, Embedded(BasicInt(150))).map(asHex))(
+          equalTo("0x0A03089601")
         )
       },
-      testM("Should encode Protobuf Test4 correctly") {
-        assertM(encode(schemaTest4, Test4(List(3, 270, 86942))).map(asHex))(
-          equalTo("0x080A06038E029EA705")
+      testM("Should correctly encode packed lists") {
+        assertM(encode(schemaPackedList, PackedList(List(3, 270, 86942))).map(asHex))(
+          equalTo("0x0A06038E029EA705")
+        )
+      },
+      testM("Should correctly encode unpacked lists") {
+        assertM(encode(schemaUnpackedList, UnpackedList(List("foo", "bar", "baz"))).map(asHex))(
+          equalTo("0x0A03666F6F0A036261720A0362617A")
         )
       },
       testM("Should encode and decode successfully") {
@@ -38,32 +43,37 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
     )
   )
 
-  // see https://developers.google.com/protocol-buffers/docs/encoding
-  // note that unlike the protobuf test cases we always get field number 1
+  // some tests are based on https://developers.google.com/protocol-buffers/docs/encoding
 
-  case class Test1(a: Int)
+  case class BasicInt(value: Int)
 
-  val schemaTest1: Schema[Test1] = Schema.caseClassN(
-    "a" -> Schema[Int]
-  )(Test1, Test1.unapply)
+  val schemaBasicInt: Schema[BasicInt] = Schema.caseClassN(
+    "value" -> Schema[Int]
+  )(BasicInt, BasicInt.unapply)
 
-  case class Test2(b: String)
+  case class BasicString(value: String)
 
-  val schemaTest2: Schema[Test2] = Schema.caseClassN(
-    "b" -> Schema[String]
-  )(Test2, Test2.unapply)
+  val schemaBasicString: Schema[BasicString] = Schema.caseClassN(
+    "value" -> Schema[String]
+  )(BasicString, BasicString.unapply)
 
-  case class Test3(c: Test1)
+  case class Embedded(embedded: BasicInt)
 
-  val schemaTest3: Schema[Test3] = Schema.caseClassN(
-    "c" -> schemaTest1
-  )(Test3, Test3.unapply)
+  val schemaEmbedded: Schema[Embedded] = Schema.caseClassN(
+    "embedded" -> schemaBasicInt
+  )(Embedded, Embedded.unapply)
 
-  case class Test4(d: List[Int])
+  case class PackedList(packed: List[Int])
 
-  val schemaTest4: Schema[Test4] = Schema.caseClassN(
-    "d" -> Schema.list(Schema[Int])
-  )(Test4, Test4.unapply)
+  val schemaPackedList: Schema[PackedList] = Schema.caseClassN(
+    "packed" -> Schema.list(Schema[Int])
+  )(PackedList, PackedList.unapply)
+
+  case class UnpackedList(items: List[String])
+
+  val schemaUnpackedList: Schema[UnpackedList] = Schema.caseClassN(
+    "items" -> Schema.list(Schema[String])
+  )(UnpackedList, UnpackedList.unapply)
 
   // TODO Generators
 
