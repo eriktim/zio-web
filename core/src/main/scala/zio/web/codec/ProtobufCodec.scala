@@ -1,5 +1,7 @@
 package zio.web.codec
 
+import java.nio.charset.Charset
+
 import zio.stream.ZTransducer
 import zio.web.schema._
 import zio.{ Chunk, ZIO, ZManaged }
@@ -49,10 +51,12 @@ object ProtobufCodec extends Codec {
         }
         .getOrElse(Chunk.empty)
 
+    // TODO check: width only for non-root?
     private def encodeRecord(structure: Map[String, Schema[_]], data: Map[String, _]): Chunk[Byte] = {
       System.out.println("RECORD " + structure)
       System.out.println("RECORD " + data)
-      val chunk = Chunk.fromIterable(data.keys.flatMap(field => encodeField(structure, data, field)))
+      val chunk = Chunk.fromIterable(data.keys.map(field => encodeField(structure, data, field))).flatten
+      System.out.println("RECORD chunk " + asHex(chunk))
       varInt(chunk.size) ++ chunk
     }
 
@@ -63,14 +67,16 @@ object ProtobufCodec extends Codec {
     }
 
     // TODO defaults
-    // TODO varInts: 32, 64, unsigned, zigZag
+    // TODO varInts: 32, 64, unsigned, zigZag, fixed
     private def encodeStandardType[A](standardType: StandardType[A], value: A): Chunk[Byte] = {
       System.out.println("STANDARD " + value)
       (standardType, value) match {
         case (StandardType.UnitType, _) => Chunk.empty
         case (StandardType.StringType, str: String) => {
-          val encoded = Chunk.fromArray(str.getBytes);
-          varInt(encoded.size) ++ encoded
+          val encoded = Chunk.fromArray(str.getBytes(Charset.forName("UTF-8"))) // TODO ZIO NIO?
+          val result  = varInt(encoded.size) ++ encoded
+          System.out.println("STRING " + str + " " + asHex(result))
+          result
         }
         case (StandardType.BoolType, b: Boolean)  => varInt(if (b) 1 else 0)
         case (StandardType.ShortType, v: Short)   => varInt(v.toInt)
@@ -135,5 +141,9 @@ object ProtobufCodec extends Codec {
       case StandardType.ByteType   => 2
       case StandardType.CharType   => 2
     }
+
+    // TODO remove: for debugging only
+    def asHex(chunk: Chunk[Byte]): String =
+      "0x" + chunk.toArray.map("%02X".format(_)).mkString
   }
 }

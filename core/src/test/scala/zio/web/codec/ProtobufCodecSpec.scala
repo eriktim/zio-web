@@ -7,13 +7,42 @@ import zio.test._
 import zio.web.schema.Schema
 
 object ProtobufCodecSpec extends DefaultRunnableSpec {
+
+  def spec = suite("ProtobufCodec Spec")(
+    suite("Toplevel ProtobufCodec Spec")(
+      testM("Should encode Protobuf Test1 correctly") {
+        assertM(encode(schemaTest1, Test1(150)).map(asHex))(
+          equalTo("0x03089601")
+        )
+      },
+      testM("Should encode Protobuf Test2 correctly") {
+        assertM(encode(schemaTest2, Test2("testing")).map(asHex))(
+          equalTo("0x09080774657374696E67")
+        )
+      },
+      testM("Should encode and decode successfully") {
+        assertM(encodeAndDecode(schema, message).fold(identity, _ => "SUCCESS"))(
+          equalTo("TODO")
+        )
+      }
+    )
+  )
+
+  // see https://developers.google.com/protocol-buffers/docs/encoding
+
   case class Test1(a: Int)
 
   val schemaTest1: Schema[Test1] = Schema.caseClassN(
     "a" -> Schema[Int]
   )(Test1, Test1.unapply)
 
-  val test1 = Test1(150)
+  case class Test2(b: String)
+
+  val schemaTest2: Schema[Test2] = Schema.caseClassN(
+    "b" -> Schema[String]
+  )(Test2, Test2.unapply)
+
+  // TODO Generators
 
   case class SearchRequest(query: String, pageNumber: Int, resultPerPage: Int)
 
@@ -24,21 +53,6 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   )(SearchRequest, SearchRequest.unapply)
 
   val message: SearchRequest = SearchRequest("bitcoins", 0, 100)
-
-  def spec = suite("ProtobufCodec Spec")(
-    suite("Toplevel ProtobufCodec Spec")(
-      testM("Should encode correctly") {
-        assertM(encode(schemaTest1, test1).map(asHex))(
-          equalTo("0x03089601")
-        )
-      },
-      testM("Should encode and decode successfully") {
-        assertM(encodeAndDecode(schema, message).fold(identity, _ => "SUCCESS"))(
-          equalTo("TODO")
-        )
-      }
-    )
-  )
 
   def asHex(chunk: Chunk[Byte]): String =
     "0x" + chunk.toArray.map("%02X".format(_)).mkString
