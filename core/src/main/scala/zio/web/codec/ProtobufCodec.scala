@@ -14,7 +14,7 @@ object ProtobufCodec extends Codec {
     ZTransducer(ZManaged.succeed(chunk => ZIO.succeed(Encoder.encodeChunk(schema, chunk))))
 
   override def decoder[A](schema: Schema[A]): ZTransducer[Any, String, Byte, A] =
-    ZTransducer(ZManaged.succeed(chunk => ZIO.fail("Decoder not implemented: " + chunk)))
+    ZTransducer(ZManaged.succeed(chunk => ZIO.fromEither(Decoder.decodeChunk(schema, chunk))))
 
   sealed trait WireType {}
 
@@ -30,32 +30,24 @@ object ProtobufCodec extends Codec {
     def encodeChunk[A](schema: Schema[A], chunk: Option[Chunk[A]]): Chunk[Byte] =
       chunk.map(_.flatMap(encode(None, schema, _))).getOrElse(Chunk.empty)
 
-    private def encode[A](fieldNumber: Option[Int], schema: Schema[A], value: A): Chunk[Byte] = {
-      System.out.println("ENCODE !!SCHEMA!! " + schema + "     !! VALUE !! " + value)
+    private def encode[A](fieldNumber: Option[Int], schema: Schema[A], value: A): Chunk[Byte] =
       (schema, value) match {
         case (Schema.Record(structure), v: SortedMap[String, _]) => encodeRecord(fieldNumber, structure, v)
         case (Schema.Sequence(element), v: Chunk[_])             => encodeSequence(fieldNumber, element, v)
         case (Schema.Enumeration(_), _)                          => Chunk.empty // TODO: is this oneOf?
         case (Schema.Transform(codec, _, g), _)                  => g(value).map(encode(fieldNumber, codec, _)).getOrElse(Chunk.empty)
-        case (Schema.Primitive(standardType), v)                 => encodeStandardType(fieldNumber, standardType, v)
+        case (Schema.Primitive(standardType), v)                 => encodePrimitive(fieldNumber, standardType, v)
         case (Schema.Tuple(left, right), v @ (_, _))             => encodeTuple(fieldNumber, left, right, v)
         case (Schema.Optional(codec), v: Option[_])              => encodeOptional(fieldNumber, codec, v)
-        case (_, _) => {
-          System.out.println("skipping " + schema + " " + value)
-          Chunk.empty
-        }
+        case (_, _)                                              => Chunk.empty
       }
-    }
 
     // TODO check: width only for non-root?
     private def encodeRecord(
       fieldNumber: Option[Int],
       structure: SortedMap[String, Schema[_]],
       data: SortedMap[String, _]
-    ): Chunk[Byte] = {
-      System.out.println("RECORD " + structure)
-      System.out.println("RECORD " + data)
-      System.out.println("RECORD " + fieldNumber)
+    ): Chunk[Byte] =
       Chunk
         .fromIterable(structure.zipWithIndex.map {
           case ((field, schema), index) =>
@@ -70,32 +62,28 @@ object ProtobufCodec extends Codec {
         })
         .map(chunk => tag(LengthDelimited(chunk.size), fieldNumber) ++ chunk)
         .flatten
-    }
 
     // TODO packed
     private def encodeSequence[A](
       fieldNumber: Option[Int],
       element: Schema[A],
       sequence: Chunk[A]
-    ): Chunk[Byte] = {
-      System.out.println("SEQ " + element)
-      System.out.println("SEQ " + sequence)
+    ): Chunk[Byte] =
       if (packed(element)) {
         val chunk = sequence.flatMap(value => encode(None, element, value))
         tag(LengthDelimited(chunk.size), fieldNumber) ++ chunk
       } else {
         sequence.flatMap(value => encode(fieldNumber, element, value))
       }
-    }
 
     // TODO defaults
     // TODO varInts: 32, 64, unsigned, zigZag, fixed
-    private def encodeStandardType[A](
+    @scala.annotation.tailrec
+    private def encodePrimitive[A](
       fieldNumber: Option[Int],
       standardType: StandardType[A],
       value: A
-    ): Chunk[Byte] = {
-      System.out.println("STANDARD " + value)
+    ): Chunk[Byte] =
       (standardType, value) match {
         case (StandardType.UnitType, _) => Chunk.empty
         case (StandardType.StringType, str: String) => {
@@ -120,10 +108,9 @@ object ProtobufCodec extends Codec {
         }
         case (StandardType.ByteType, byte: Byte) =>
           tag(LengthDelimited(1), fieldNumber) :+ byte // TODO must be Chunk[Byte]?
-        case (StandardType.CharType, c: Char) => encodeStandardType(fieldNumber, StandardType.StringType, c.toString)
+        case (StandardType.CharType, c: Char) => encodePrimitive(fieldNumber, StandardType.StringType, c.toString)
         case (_, _)                           => Chunk.empty
       }
-    }
 
     private def encodeTuple[A, B](
       fieldNumber: Option[Int],
@@ -192,9 +179,83 @@ object ProtobufCodec extends Codec {
       case StandardType.ByteType   => false
       case StandardType.CharType   => true
     }
+  }
 
-    // TODO remove: for debugging only
-    def asHex(chunk: Chunk[Byte]): String =
-      "0x" + chunk.toArray.map("%02X".format(_)).mkString
+  object Decoder {
+
+    def decodeChunk[A](schema: Schema[A], chunk: Option[Chunk[Byte]]): Either[String, Chunk[A]] =
+      chunk.map(decode(schema, _)).map(_.map(Chunk(_))).getOrElse(Left("Failed decoding empty bytes"))
+
+    private def decode[A](schema: Schema[A], chunk: Chunk[Byte]): Either[String, A] = {
+      System.out.println("DECODE " + schema)
+      System.out.println("DECODE " + chunk)
+      schema match {
+        case Schema.Record(structure)       => decodeRecord(structure, chunk).asInstanceOf[Either[String, A]]
+        case Schema.Sequence(element)       => decodeSequence(element, chunk).asInstanceOf[Either[String, A]]
+        case Schema.Enumeration(_)          => Left("Enumeration is not yet supported")
+        case Schema.Transform(codec, f, _)  => decodeTransform(codec, f, chunk)
+        case Schema.Primitive(standardType) => decodePrimitive(standardType, chunk)
+        case Schema.Tuple(left, right)      => decodeTuple(left, right, chunk).asInstanceOf[Either[String, A]]
+        case Schema.Optional(codec)         => decodeOptional(codec, chunk).asInstanceOf[Either[String, A]]
+      }
+    }
+
+    private def decodeRecord[A](
+      schema: SortedMap[String, Schema[_]],
+      chunk: Chunk[Byte]
+    ): Either[String, SortedMap[String, _]] = {
+      System.out.println("STANDARD " + schema)
+      System.out.println("STANDARD " + chunk)
+      Right(SortedMap())
+    }
+
+    private def decodeSequence[A](schema: Schema[A], chunk: Chunk[Byte]): Either[String, List[A]] = {
+      System.out.println("STANDARD " + schema)
+      System.out.println("STANDARD " + chunk)
+      Right(List())
+    }
+    private def decodeTransform[A, B](
+      schema: Schema[B],
+      f: B => Either[String, A],
+      chunk: Chunk[Byte]
+    ): Either[String, A] =
+      decode(schema, chunk).flatMap(f)
+
+    private def decodePrimitive[A](standardType: StandardType[_], chunk: Chunk[Byte]): Either[String, A] = {
+      System.out.println("STANDARD " + chunk)
+      standardType match {
+        case StandardType.UnitType   => Right(()).asInstanceOf[Either[String, A]]
+        case StandardType.StringType => Right("").asInstanceOf[Either[String, A]]
+        case StandardType.BoolType   => Right(false).asInstanceOf[Either[String, A]]
+        case StandardType.ShortType  => Right(0).asInstanceOf[Either[String, A]]
+        case StandardType.IntType    => Right(0).asInstanceOf[Either[String, A]]
+        case StandardType.LongType   => Right(0).asInstanceOf[Either[String, A]]
+        case StandardType.FloatType  => Right(0).asInstanceOf[Either[String, A]]
+        case StandardType.DoubleType => Right(0).asInstanceOf[Either[String, A]]
+        case StandardType.ByteType   => Right(0.byteValue()).asInstanceOf[Either[String, A]]
+        case StandardType.CharType   => Right('a').asInstanceOf[Either[String, A]]
+      }
+    }
+
+    private def decodeTuple[A, B](left: Schema[A], right: Schema[B], chunk: Chunk[Byte]): Either[String, (A, B)] = {
+      System.out.println("STANDARD " + left)
+      System.out.println("STANDARD " + right)
+      System.out.println("STANDARD " + chunk)
+      decode(Schema.record(SortedMap("left" -> left, "right" -> right)), chunk)
+        .flatMap(
+          record =>
+            (record.get("left"), record.get("right")) match {
+              case (Some(l), Some(r)) => Right((l.asInstanceOf[A], r.asInstanceOf[B]))
+              case _                  => Left("Failed decoding tuple")
+            }
+        )
+    }
+
+    private def decodeOptional[A](schema: Schema[_], chunk: Chunk[Byte]): Either[String, Option[A]] = {
+      System.out.println("STANDARD " + schema)
+      System.out.println("STANDARD " + chunk)
+      decode(Schema.record(SortedMap("value" -> schema)), chunk)
+        .map(record => record.get("value").asInstanceOf[Option[A]])
+    }
   }
 }

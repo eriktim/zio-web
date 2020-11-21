@@ -46,7 +46,7 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
         )
       },
       testM("Should encode and decode successfully") {
-        assertM(encodeAndDecode(schema, message).fold(identity, _ => "SUCCESS"))(
+        assertM(encodeAndDecode(schema, message).fold(identity, _.toString()))(
           equalTo("TODO")
         )
       }
