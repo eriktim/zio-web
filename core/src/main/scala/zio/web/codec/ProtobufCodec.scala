@@ -1,6 +1,7 @@
 package zio.web.codec
 
 import java.nio.charset.Charset
+import java.nio.{ ByteBuffer, ByteOrder }
 
 import zio.stream.ZTransducer
 import zio.web.schema._
@@ -34,7 +35,7 @@ object ProtobufCodec extends Codec {
       (schema, value) match {
         case (Schema.Record(structure), v: SortedMap[String, _]) => encodeRecord(fieldNumber, structure, v)
         case (Schema.Sequence(element), v: Chunk[_])             => encodeSequence(fieldNumber, element, v)
-        case (Schema.Enumeration(_), _)                          => Chunk.empty // TODO
+        case (Schema.Enumeration(_), _)                          => Chunk.empty // TODO: is this oneOf?
         case (Schema.Transform(codec, _, g), _)                  => g(value).map(encode(fieldNumber, codec, _)).getOrElse(Chunk.empty)
         case (Schema.Primitive(standardType), v)                 => encodeStandardType(fieldNumber, standardType, v)
         case (Schema.Tuple(left, right), v @ (_, _))             => encodeTuple(fieldNumber, left, right, v)
@@ -101,19 +102,26 @@ object ProtobufCodec extends Codec {
           val encoded = Chunk.fromArray(str.getBytes(Charset.forName("UTF-8"))) // TODO ZIO NIO?
           tag(LengthDelimited(encoded.size), fieldNumber) ++ encoded
         }
-        case (StandardType.BoolType, b: Boolean)  => tag(VarInt, fieldNumber) ++ varInt(if (b) 1 else 0)
-        case (StandardType.ShortType, v: Short)   => tag(VarInt, fieldNumber) ++ varInt(v.toLong)
-        case (StandardType.IntType, v: Int)       => tag(VarInt, fieldNumber) ++ varInt(v)
-        case (StandardType.LongType, v: Long)     => tag(VarInt, fieldNumber) ++ varInt(v)
-        case (StandardType.FloatType, _: Float)   => Chunk.empty // TODO
-        case (StandardType.DoubleType, _: Double) => Chunk.empty // TODO
+        case (StandardType.BoolType, b: Boolean) => tag(VarInt, fieldNumber) ++ varInt(if (b) 1 else 0)
+        case (StandardType.ShortType, v: Short)  => tag(VarInt, fieldNumber) ++ varInt(v.toLong)
+        case (StandardType.IntType, v: Int)      => tag(VarInt, fieldNumber) ++ varInt(v)
+        case (StandardType.LongType, v: Long)    => tag(VarInt, fieldNumber) ++ varInt(v)
+        case (StandardType.FloatType, v: Float) => {
+          val byteBuffer = ByteBuffer.allocate(4)
+          byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+          byteBuffer.putFloat(v)
+          tag(Bit32, fieldNumber) ++ Chunk.fromArray(byteBuffer.array)
+        }
+        case (StandardType.DoubleType, v: Double) => {
+          val byteBuffer = ByteBuffer.allocate(8)
+          byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+          byteBuffer.putDouble(v)
+          tag(Bit64, fieldNumber) ++ Chunk.fromArray(byteBuffer.array)
+        }
         case (StandardType.ByteType, byte: Byte) =>
           tag(LengthDelimited(1), fieldNumber) :+ byte // TODO must be Chunk[Byte]?
         case (StandardType.CharType, c: Char) => encodeStandardType(fieldNumber, StandardType.StringType, c.toString)
-        case (_, _) => {
-          System.out.println("skipping " + standardType + " " + value)
-          Chunk.empty
-        }
+        case (_, _)                           => Chunk.empty
       }
     }
 

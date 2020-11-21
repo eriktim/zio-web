@@ -20,6 +20,16 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
           equalTo("0x0A0774657374696E67")
         )
       },
+      testM("Should correctly encode floats") {
+        assertM(encode(schemaBasicFloat, BasicFloat(0.001f)).map(asHex))(
+          equalTo("0x0D6F12833A")
+        )
+      },
+      testM("Should correctly encode doubles") {
+        assertM(encode(schemaBasicDouble, BasicDouble(0.001)).map(asHex))(
+          equalTo("0x09FCA9F1D24D62503F")
+        )
+      },
       testM("Should correctly encode embedded messages") {
         assertM(encode(schemaEmbedded, Embedded(BasicInt(150))).map(asHex))(
           equalTo("0x0A03089601")
@@ -56,6 +66,18 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   val schemaBasicString: Schema[BasicString] = Schema.caseClassN(
     "value" -> Schema[String]
   )(BasicString, BasicString.unapply)
+
+  case class BasicFloat(value: Float)
+
+  val schemaBasicFloat: Schema[BasicFloat] = Schema.caseClassN(
+    "value" -> Schema[Float]
+  )(BasicFloat, BasicFloat.unapply)
+
+  case class BasicDouble(value: Double)
+
+  val schemaBasicDouble: Schema[BasicDouble] = Schema.caseClassN(
+    "value" -> Schema[Double]
+  )(BasicDouble, BasicDouble.unapply)
 
   case class Embedded(embedded: BasicInt)
 
