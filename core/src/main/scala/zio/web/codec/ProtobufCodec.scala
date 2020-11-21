@@ -131,7 +131,7 @@ object ProtobufCodec extends Codec {
 
     private def wireType(standardType: StandardType[_]): Int = standardType match {
       case StandardType.UnitType   => 0
-      case StandardType.StringType => 0
+      case StandardType.StringType => 2
       case StandardType.BoolType   => 0
       case StandardType.ShortType  => 0
       case StandardType.IntType    => 0

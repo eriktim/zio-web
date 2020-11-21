@@ -17,7 +17,12 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
       },
       testM("Should encode Protobuf Test2 correctly") {
         assertM(encode(schemaTest2, Test2("testing")).map(asHex))(
-          equalTo("0x09080774657374696E67")
+          equalTo("0x090A0774657374696E67")
+        )
+      },
+      testM("Should encode Protobuf Test3 correctly") {
+        assertM(encode(schemaTest3, Test3(Test1(150))).map(asHex))(
+          equalTo("0x050A03089601")
         )
       },
       testM("Should encode and decode successfully") {
@@ -29,6 +34,7 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   )
 
   // see https://developers.google.com/protocol-buffers/docs/encoding
+  // note that unlike the protobuf test cases we always get field number 1
 
   case class Test1(a: Int)
 
@@ -41,6 +47,12 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   val schemaTest2: Schema[Test2] = Schema.caseClassN(
     "b" -> Schema[String]
   )(Test2, Test2.unapply)
+
+  case class Test3(c: Test1)
+
+  val schemaTest3: Schema[Test3] = Schema.caseClassN(
+    "c" -> schemaTest1
+  )(Test3, Test3.unapply)
 
   // TODO Generators
 
