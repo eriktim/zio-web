@@ -60,10 +60,12 @@ object ProtobufCodec extends Codec {
       varInt(chunk.size) ++ chunk
     }
 
-    private def encodeSequence[A](element: Schema[A], chunk: Chunk[A]): Chunk[Byte] = {
+    // TODO packed
+    private def encodeSequence[A](element: Schema[A], sequence: Chunk[A]): Chunk[Byte] = {
       System.out.println("SEQ " + element)
-      System.out.println("SEQ " + chunk)
-      Chunk(100.byteValue()) // TODO
+      System.out.println("SEQ " + sequence)
+      val chunck = sequence.flatMap(value => encode(element, value))
+      varInt(chunck.size) ++ chunck
     }
 
     // TODO defaults

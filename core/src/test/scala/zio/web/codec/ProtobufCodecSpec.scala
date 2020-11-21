@@ -25,6 +25,11 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
           equalTo("0x050A03089601")
         )
       },
+      testM("Should encode Protobuf Test4 correctly") {
+        assertM(encode(schemaTest4, Test4(List(3, 270, 86942))).map(asHex))(
+          equalTo("0x080A06038E029EA705")
+        )
+      },
       testM("Should encode and decode successfully") {
         assertM(encodeAndDecode(schema, message).fold(identity, _ => "SUCCESS"))(
           equalTo("TODO")
@@ -53,6 +58,12 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   val schemaTest3: Schema[Test3] = Schema.caseClassN(
     "c" -> schemaTest1
   )(Test3, Test3.unapply)
+
+  case class Test4(d: List[Int])
+
+  val schemaTest4: Schema[Test4] = Schema.caseClassN(
+    "d" -> Schema.list(Schema[Int])
+  )(Test4, Test4.unapply)
 
   // TODO Generators
 
