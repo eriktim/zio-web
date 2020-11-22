@@ -45,9 +45,14 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
           equalTo("0x0A03666F6F0A036261720A0362617A")
         )
       },
+      testM("Should correctly encode records") {
+        assertM(encode(schemaRecord, Record("Foo", 123)).map(asHex))(
+          equalTo("0x0A03466F6F107B")
+        )
+      },
       testM("Should encode and decode successfully") {
-        assertM(encodeAndDecode(schema, message).fold(identity, _.toString()))(
-          equalTo("TODO")
+        assertM(encodeAndDecode(schema, message))(
+          equalTo(Chunk(message))
         )
       }
     )
@@ -97,8 +102,14 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
     "items" -> Schema.list(Schema[String])
   )(UnpackedList, UnpackedList.unapply)
 
-  // TODO Generators
+  case class Record(name: String, value: Int)
 
+  val schemaRecord: Schema[Record] = Schema.caseClassN(
+    "name"  -> Schema[String],
+    "value" -> Schema[Int]
+  )(Record, Record.unapply)
+
+  // TODO: Generators instead of SearchRequest
   case class SearchRequest(query: String, pageNumber: Int, resultPerPage: Int)
 
   val schema: Schema[SearchRequest] = Schema.caseClassN(
@@ -107,7 +118,7 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
     "resultPerPage" -> Schema[Int]
   )(SearchRequest, SearchRequest.unapply)
 
-  val message: SearchRequest = SearchRequest("bitcoins", 0, 100)
+  val message: SearchRequest = SearchRequest("bitcoins", 1, 100)
 
   def asHex(chunk: Chunk[Byte]): String =
     "0x" + chunk.toArray.map("%02X".format(_)).mkString
