@@ -54,6 +54,16 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
         assertM(encodeAndDecode(schema, message))(
           equalTo(Chunk(message))
         )
+      },
+      testM("Should encode and decode successfully PACKED") {
+        assertM(encodeAndDecode(schemaPackedList, PackedList(List(3, 270, 86942))))(
+          equalTo(Chunk(PackedList(List(3, 270, 86942))))
+        )
+      },
+      testM("Should encode and decode successfully NON-PACKED") {
+        assertM(encodeAndDecode(schemaUnpackedList, UnpackedList(List("foo", "bar", "baz"))))(
+          equalTo(Chunk(UnpackedList(List("foo", "bar", "baz"))))
+        )
       }
     )
   )

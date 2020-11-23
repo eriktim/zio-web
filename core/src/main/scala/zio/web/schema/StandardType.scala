@@ -1,5 +1,7 @@
 package zio.web.schema
 
+import zio.Chunk
+
 sealed trait StandardType[A]
 
 object StandardType {
@@ -11,7 +13,7 @@ object StandardType {
   implicit object LongType   extends StandardType[Long]
   implicit object FloatType  extends StandardType[Float]
   implicit object DoubleType extends StandardType[Double]
-  implicit object ByteType   extends StandardType[Byte]
+  implicit object ByteType   extends StandardType[Chunk[Byte]]
   implicit object CharType   extends StandardType[Char]
 
   // TODO: Add java.time
