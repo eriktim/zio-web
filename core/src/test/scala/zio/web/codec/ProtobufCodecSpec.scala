@@ -6,48 +6,55 @@ import zio.test.Assertion._
 import zio.test._
 import zio.web.schema.Schema
 
+import scala.util.Try
+
 object ProtobufCodecSpec extends DefaultRunnableSpec {
 
   def spec = suite("ProtobufCodec Spec")(
     suite("Toplevel ProtobufCodec Spec")(
       testM("Should correctly encode integers") {
-        assertM(encode(schemaBasicInt, BasicInt(150)).map(asHex))(
-          equalTo("0x089601")
+        assertM(encode(schemaBasicInt, BasicInt(150)).map(toHex))(
+          equalTo("089601")
         )
       },
       testM("Should correctly encode strings") {
-        assertM(encode(schemaBasicString, BasicString("testing")).map(asHex))(
-          equalTo("0x0A0774657374696E67")
+        assertM(encode(schemaBasicString, BasicString("testing")).map(toHex))(
+          equalTo("0A0774657374696E67")
         )
       },
       testM("Should correctly encode floats") {
-        assertM(encode(schemaBasicFloat, BasicFloat(0.001f)).map(asHex))(
-          equalTo("0x0D6F12833A")
+        assertM(encode(schemaBasicFloat, BasicFloat(0.001f)).map(toHex))(
+          equalTo("0D6F12833A")
         )
       },
       testM("Should correctly encode doubles") {
-        assertM(encode(schemaBasicDouble, BasicDouble(0.001)).map(asHex))(
-          equalTo("0x09FCA9F1D24D62503F")
+        assertM(encode(schemaBasicDouble, BasicDouble(0.001)).map(toHex))(
+          equalTo("09FCA9F1D24D62503F")
         )
       },
       testM("Should correctly encode embedded messages") {
-        assertM(encode(schemaEmbedded, Embedded(BasicInt(150))).map(asHex))(
-          equalTo("0x0A03089601")
+        assertM(encode(schemaEmbedded, Embedded(BasicInt(150))).map(toHex))(
+          equalTo("0A03089601")
         )
       },
       testM("Should correctly encode packed lists") {
-        assertM(encode(schemaPackedList, PackedList(List(3, 270, 86942))).map(asHex))(
-          equalTo("0x0A06038E029EA705")
+        assertM(encode(schemaPackedList, PackedList(List(3, 270, 86942))).map(toHex))(
+          equalTo("0A06038E029EA705")
         )
       },
       testM("Should correctly encode unpacked lists") {
-        assertM(encode(schemaUnpackedList, UnpackedList(List("foo", "bar", "baz"))).map(asHex))(
-          equalTo("0x0A03666F6F0A036261720A0362617A")
+        assertM(encode(schemaUnpackedList, UnpackedList(List("foo", "bar", "baz"))).map(toHex))(
+          equalTo("0A03666F6F0A036261720A0362617A")
         )
       },
       testM("Should correctly encode records") {
-        assertM(encode(schemaRecord, Record("Foo", 123)).map(asHex))(
-          equalTo("0x0A03466F6F107B")
+        assertM(encode(schemaRecord, Record("Foo", 123)).map(toHex))(
+          equalTo("0A03466F6F107B")
+        )
+      },
+      testM("Should fill non-complete messages with default values") {
+        assertM(decode(schemaRecord, "107B"))(
+          equalTo(Chunk(Record("", 123)))
         )
       },
       testM("Should encode and decode successfully") {
@@ -109,7 +116,7 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
   case class UnpackedList(items: List[String])
 
   val schemaUnpackedList: Schema[UnpackedList] = Schema.caseClassN(
-    "items" -> Schema.list(Schema[String])
+    "unpacked" -> Schema.list(Schema[String])
   )(UnpackedList, UnpackedList.unapply)
 
   case class Record(name: String, value: Int)
@@ -130,13 +137,24 @@ object ProtobufCodecSpec extends DefaultRunnableSpec {
 
   val message: SearchRequest = SearchRequest("bitcoins", 1, 100)
 
-  def asHex(chunk: Chunk[Byte]): String =
-    "0x" + chunk.toArray.map("%02X".format(_)).mkString
+  def toHex(chunk: Chunk[Byte]): String =
+    chunk.toArray.map("%02X".format(_)).mkString
+
+  def fromHex(hex: String): Chunk[Byte] =
+    Try(hex.split("(?<=\\G.{2})").map(Integer.parseInt(_, 16).toByte))
+      .map(Chunk.fromArray)
+      .getOrElse(Chunk.empty)
 
   def encode[A](schema: Schema[A], input: A) =
     ZStream
       .succeed(input)
       .transduce(ProtobufCodec.encoder(schema))
+      .run(ZSink.collectAll)
+
+  def decode[A](schema: Schema[A], hex: String) =
+    ZStream
+      .fromChunk(fromHex(hex))
+      .transduce(ProtobufCodec.decoder(schema))
       .run(ZSink.collectAll)
 
   def encodeAndDecode[A](schema: Schema[A], input: A) =
